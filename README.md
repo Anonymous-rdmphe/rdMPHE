@@ -14,4 +14,4 @@ use "go mod vendor"
 HOW TO RUN UNITTEST
 ===================
 1. go to target folder (e.g for rdMPHE/MKHE with CKKS [resp. BFV], "cd mkckks/" [resp. "cd mkbfv/"])
-2. run go test command "go test -args -n=1"
+2. run go test command "go test -timeout 0 -args -n=1"
