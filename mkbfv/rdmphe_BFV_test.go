@@ -3,12 +3,14 @@ package mkbfv
 import (
 	"flag"
 	"fmt"
+	"math"
 	"math/big"
 	"mk-lattigo/mkrlwe"
 	"strconv"
 	"testing"
 	"time"
 
+	"github.com/ldsec/lattigo/v2/bfv"
 	"github.com/ldsec/lattigo/v2/ring"
 	"github.com/ldsec/lattigo/v2/rlwe"
 	"github.com/ldsec/lattigo/v2/utils"
@@ -135,185 +137,639 @@ type testParams struct {
 	swkheadSet [32]*mkrlwe.SWKSet
 }
 
+const iternum = 10
+
+var PartySet = [5]int{1, 3, 7, 15, 31} // , 3, 7, 15, 31
+
 func Test_rdMPHE_BFV(t *testing.T) {
-	defaultParams := []ParametersLiteral{PN14QP439, PN15QP880}
-	for _, defaultParam := range defaultParams {
-		fmt.Print("========Paramset=========", "\n")
-		for _, numParties := range []int{1, 3, 7, 15, 31} {
+	for partyi := 0; partyi < len(PartySet); partyi++ {
+		P := PartySet[partyi]
+		fmt.Printf("P = %d\n", P)
 
-			// number of parties in each group
-			// numParties := 31 // when this is 1, MKHE.
-			JoiningParties := 1
-			numCtxt := 1
+		var Switch [iternum]time.Duration
+		var MultB [iternum]time.Duration
+		var ExtGen [iternum]time.Duration
+		var ExtCt [iternum]time.Duration
+		var ExtEntire [iternum]time.Duration
+		var MultA [iternum]time.Duration
 
-			fmt.Print("================= rdMPHE_BFV ", numParties+JoiningParties, "===================", "\n", "\n", "\n")
-			KGstart := time.Now()
-			params := NewParametersFromLiteral(defaultParam)
+		for iter := 0; iter < iternum; iter++ {
 
-			groupList := make([]string, *maxGroups)
-			idset := mkrlwe.NewIDSet()
+			// Time params
+			var Switchtemp time.Duration
+			var MultBtemp time.Duration
+			var ExtGentemp time.Duration
+			var ExtCttemp time.Duration
+			var ExtEntiretemp time.Duration
+			var MultAtemp time.Duration
 
-			for i := range groupList {
-				groupList[i] = "group" + strconv.Itoa(i)
-				idset.Add(groupList[i])
+			defaultParams := []ParametersLiteral{PN15QP880} // PN14QP439, PN15QP880}
+			for _, defaultParam := range defaultParams {
+				fmt.Print("========Paramset=========", "\n")
+				for _, numParties := range []int{P} {
+					// for _, numParties := range []int{1, 3, 7, 15, 31} {
+
+					// number of parties in each group
+					// numParties := 31 // when this is 1, MKHE.
+					JoiningParties := 1
+					numCtxt := 1
+
+					fmt.Print("================= rdMPHE_BFV ", numParties+JoiningParties, "===================", "\n", "\n", "\n")
+					KGstart := time.Now()
+					params := NewParametersFromLiteral(defaultParam)
+
+					fmt.Print("MaxGroups = ", *maxGroups, "\n")
+
+					groupList := make([]string, *maxGroups)
+					idset := mkrlwe.NewIDSet()
+
+					for i := range groupList {
+						groupList[i] = "group" + strconv.Itoa(i)
+						idset.Add(groupList[i])
+					}
+
+					var testContext2 *testParams
+
+					// Common
+					sk := make([]*mkrlwe.SecretKey, numParties)
+					pk := make([]*mkrlwe.PublicKey, numParties)
+					rlk := make([]*RelinearizationKey, numParties)
+					cjk := make([]*mkrlwe.ConjugationKey, numParties)
+					rtks := make([]map[uint]*mkrlwe.RotationKey, numParties)
+
+					var gsk *mkrlwe.SecretKey
+					var gpk *mkrlwe.PublicKey
+					var grlk *RelinearizationKey
+					var gcjk *mkrlwe.ConjugationKey
+					var grtk *mkrlwe.RotationKey
+
+					/////////////////////////////////////////////////////////////////////////////////////////////////////
+
+					swk := make([]*mkrlwe.SWK, numParties+JoiningParties)
+					swkhead := make([]*mkrlwe.SWK, numParties+JoiningParties)
+					swk2 := make([]*mkrlwe.SWK, numParties+JoiningParties)
+					swkhead2 := make([]*mkrlwe.SWK, numParties+JoiningParties)
+					var gsk2 *mkrlwe.SecretKey
+					var gpk2 *mkrlwe.PublicKey
+					var grlk2 *RelinearizationKey
+					var gcjk2 *mkrlwe.ConjugationKey
+					var grtk2 *mkrlwe.RotationKey
+
+					testContext2, _, gsk, gpk, grlk, gcjk, grtk, sk, pk, rlk, cjk, rtks = genTestParams(params, gsk, gpk, grlk, gcjk, grtk, sk, pk, rlk, cjk, rtks, idset, numParties)
+
+					// MPHE
+
+					swksum := mkrlwe.NewSWK(testContext2.params.Parameters, "group0")
+					swkheadsum := mkrlwe.NewSWK(testContext2.params.Parameters, "group0")
+
+					testContext2, _, swk, swkhead, swksum, swkheadsum = MPgenSWK(testContext2, gsk, gpk, sk, pk, rlk, cjk, swk, swkhead, swksum, swkheadsum, rtks, idset, numParties)
+					// fmt.Print("NumParties = ", numParties, "\n")
+					KGend := time.Since(KGstart)
+					fmt.Print("Key Generation time = ", KGend, "\n")
+
+					msgList := make([]*Message, numCtxt)
+					ctxtList := make([]*Ciphertext, numCtxt)
+					msg := msgList[0]
+					var ctxt *Ciphertext
+					var ctsk *Ciphertext
+					// ctsk := ctxtList[0]
+
+					// msg, ctxt, ctsk = testKS(testContext2, groupList, gsk, gpk, sk, pk, swk, swkhead, t)
+
+					// ctxt1 := testContext2.encryptor.EncryptMsgNew(msg, testContext2.pkSet.GetPublicKey("group0"))
+
+					_ = msg
+					_ = ctsk
+					_ = ctxt
+
+					// for i := 0; i < numCtxt; i++ {
+					// 	ctxtList[i] = ctxt.CopyNew()
+					// }
+
+					// fmt.Print("testContext.rtkstemp[P] = ", testContext2.rtkSet.Value["group0"], "\n")
+
+					// msg2Out := testContext2.decryptor.DecryptSk(ctxt1, gsk)
+					// fmt.Print("Dec TEST !! = ", msg2Out.Value[0], "\n")
+					// fmt.Print("!! ctxt = ", ctxt.Ciphertext.Value["group0"].Coeffs[0][:10], "\n")
+
+					var ctxtVP *Ciphertext
+					ctxtVP, Switchtemp, MultBtemp = VectorProd_Before_Join(testContext2, groupList, numParties, sk, swk, swkhead, 0, t)
+
+					ctxtList[0] = ctxtVP
+					// Joining
+					Updatestart := time.Now()
+					jk := mkrlwe.NewSWK(testContext2.params.Parameters, "group0")
+					jkhead := mkrlwe.NewSWK(testContext2.params.Parameters, "group0")
+					uaux := mkrlwe.NewSWK(testContext2.params.Parameters, "group0")
+					uauxhead := mkrlwe.NewSWK(testContext2.params.Parameters, "group0")
+					testContext2, _, gsk2, gpk2, grlk2, gcjk2, grtk2, sk, pk, rlk, cjk, swk2, swkhead2, swksum, swkheadsum, rtks, jk, jkhead, uaux, uauxhead, ctxtList, ExtGentemp, ExtCttemp = testJoinPartyMP(testContext2, gsk, gpk, grlk, gcjk, grtk, sk, pk, rlk, cjk, swk, swkhead, swksum, swkheadsum, rtks, jk, jkhead, uaux, uauxhead, idset, numParties, JoiningParties, ctxtList, t)
+
+					// groupList = make([]string, *maxGroups+JoiningParties)
+
+					// for i := range groupList {
+					// 	groupList[i] = "group" + strconv.Itoa(i)
+					// 	idset.Add(groupList[i])
+					// }
+
+					ExtEntiretemp = time.Since(Updatestart)
+					fmt.Print("Extend (key+ctxt) time = ", ExtEntiretemp, "\n")
+
+					MultAtemp = VectorProd_After_Join(testContext2, groupList, numParties, JoiningParties, ctxtList[0], 0, t)
+
+					// msg, ctOut, ctsk = testKS(testContext2, groupList, gsk2, gpk2, sk, pk, swk, swkhead, t)
+					// ctsk2 := ctsk.CopyNew()
+					// fmt.Print("testContext.rtkstemp[P] = ", testContext2.rtkSet.Value["group0"], "\n")
+					// msg2Out := testContext2.decryptor.DecryptSk(ctxt, gsk)
+					// fmt.Print("Dec TEST !! = ", msg2Out.Value[0], "\n")
+
+					// testKSAfterJoin(testContext2, groupList, msg, ctxt1, ctsk, gsk, gsk2, gpk, gpk2, sk, pk, swk2, swkhead2, jk, jkhead, uaux, uauxhead, ctxtList, t)
+
+					_, _, _, _, _, _, _ = gsk2, gpk2, grlk2, gcjk2, grtk2, swk2, swkhead2
+
+					// // Eval tests
+					// fmt.Print("groupList = ", groupList, "\n")
+					// testEvaluatorAdd(testContext2, groupList, t)
+					// testEvaluatorMul(testContext2, groupList, t)
+					// testEvaluatorRot(testContext2, groupList, t)
+
+					// testEvaluatorConj(testContext2, groupList, t)
+					// InputSelection(testContext2, groupList, numParties, t)
+				}
 			}
+			Switch[iter] = Switchtemp
+			MultB[iter] = MultBtemp
+			ExtGen[iter] = ExtGentemp
+			ExtCt[iter] = ExtCttemp
+			ExtEntire[iter] = ExtEntiretemp
+			MultA[iter] = MultAtemp
 
-			var testContext2 *testParams
-
-			// Common
-			sk := make([]*mkrlwe.SecretKey, numParties)
-			pk := make([]*mkrlwe.PublicKey, numParties)
-			rlk := make([]*RelinearizationKey, numParties)
-			cjk := make([]*mkrlwe.ConjugationKey, numParties)
-			rtks := make([]map[uint]*mkrlwe.RotationKey, numParties)
-
-			var gsk *mkrlwe.SecretKey
-			var gpk *mkrlwe.PublicKey
-			var grlk *RelinearizationKey
-			var gcjk *mkrlwe.ConjugationKey
-			var grtk *mkrlwe.RotationKey
-
-			/////////////////////////////////////////////////////////////////////////////////////////////////////
-
-			swk := make([]*mkrlwe.SWK, numParties+JoiningParties)
-			swkhead := make([]*mkrlwe.SWK, numParties+JoiningParties)
-			swk2 := make([]*mkrlwe.SWK, numParties+JoiningParties)
-			swkhead2 := make([]*mkrlwe.SWK, numParties+JoiningParties)
-			var gsk2 *mkrlwe.SecretKey
-			var gpk2 *mkrlwe.PublicKey
-			var grlk2 *RelinearizationKey
-			var gcjk2 *mkrlwe.ConjugationKey
-			var grtk2 *mkrlwe.RotationKey
-
-			testContext2, _, gsk, gpk, grlk, gcjk, grtk, sk, pk, rlk, cjk, rtks = genTestParams(params, gsk, gpk, grlk, gcjk, grtk, sk, pk, rlk, cjk, rtks, idset, numParties)
-
-			// MPHE
-
-			swksum := mkrlwe.NewSWK(testContext2.params.Parameters, "group0")
-			swkheadsum := mkrlwe.NewSWK(testContext2.params.Parameters, "group0")
-
-			testContext2, _, swk, swkhead, swksum, swkheadsum = MPgenSWK(testContext2, gsk, gpk, sk, pk, rlk, cjk, swk, swkhead, swksum, swkheadsum, rtks, idset, numParties)
-			KGend := time.Since(KGstart)
-			fmt.Print("Key Generation time = ", KGend, "\n")
-
-			msgList := make([]*Message, numCtxt)
-			ctxtList := make([]*Ciphertext, numCtxt)
-			msg := msgList[0]
-			ctxt := ctxtList[0]
-			ctsk := ctxtList[0]
-
-			msg, ctxt, ctsk = testKS(testContext2, groupList, gsk, gpk, sk, pk, swk, swkhead, t)
-
-			_ = msg
-			_ = ctsk
-
-			for i := 0; i < numCtxt; i++ {
-				ctxtList[i] = ctxt.CopyNew()
-			}
-
-			Updatestart := time.Now()
-			jk := mkrlwe.NewSWK(testContext2.params.Parameters, "group0")
-			jkhead := mkrlwe.NewSWK(testContext2.params.Parameters, "group0")
-			uaux := mkrlwe.NewSWK(testContext2.params.Parameters, "group0")
-			uauxhead := mkrlwe.NewSWK(testContext2.params.Parameters, "group0")
-
-			// Joining
-			testContext2, _, gsk2, gpk2, grlk2, gcjk2, grtk2, sk, pk, rlk, cjk, swk2, swkhead2, swksum, swkheadsum, rtks, jk, jkhead, uaux, uauxhead, ctxtList = testJoinPartyMP(testContext2, gsk, gpk, grlk, gcjk, grtk, sk, pk, rlk, cjk, swk, swkhead, swksum, swkheadsum, rtks, jk, jkhead, uaux, uauxhead, idset, numParties, JoiningParties, ctxtList, t)
-			Updateend := time.Since(Updatestart)
-			fmt.Print("Extend (key+ctxt) time = ", Updateend, "\n")
-			// msg, ctOut, ctsk = testKS(testContext2, groupList, gsk2, gpk2, sk, pk, swk, swkhead, t)
-			// ctsk2 := ctsk.CopyNew()
-
-			testKSAfterJoin(testContext2, groupList, msg, ctxt, ctsk, gsk, gsk2, gpk, gpk2, sk, pk, swk2, swkhead2, jk, jkhead, uaux, uauxhead, ctxtList, t)
-
-			_, _, _, _, _, _, _ = gsk2, gpk2, grlk2, gcjk2, grtk2, swk2, swkhead2
-
-			// Eval tests
-			testEvaluatorAdd(testContext2, groupList, t)
-			testEvaluatorMul(testContext2, groupList, t)
-			testEvaluatorRot(testContext2, groupList, t)
-			testEvaluatorConj(testContext2, groupList, t)
 		}
+		fmt.Print("Switch = ", Switch, "\n")
+
+		var Switchavg time.Duration
+		var MultBavg time.Duration
+		var ExtGenavg time.Duration
+		var ExtCtavg time.Duration
+		var ExtEntireavg time.Duration
+		var MultAavg time.Duration
+
+		Switchavg = Switch[0]
+		MultBavg = MultB[0]
+		ExtGenavg = ExtGen[0]
+		ExtCtavg = ExtCt[0]
+		ExtEntireavg = ExtEntire[0]
+		MultAavg = MultA[0]
+
+		for iter := 1; iter < iternum; iter++ {
+			Switchavg += Switch[iter]
+			MultBavg += MultB[iter]
+			ExtGenavg += ExtGen[iter]
+			ExtCtavg += ExtCt[iter]
+			ExtEntireavg += ExtEntire[iter]
+			MultAavg += MultA[iter]
+		}
+
+		Switchavg = Switchavg / iternum
+		MultBavg = MultBavg / iternum
+		ExtGenavg = ExtGenavg / iternum
+		ExtCtavg = ExtCtavg / iternum
+		ExtEntireavg = ExtEntireavg / iternum
+		MultAavg = MultAavg / iternum
+
+		fmt.Println("Switchavg      =", Switchavg)
+		fmt.Println("MultBavg       =", MultBavg)
+		fmt.Println("ExtGenavg      =", ExtGenavg)
+		fmt.Println("ExtCtavg       =", ExtCtavg)
+		fmt.Println("ExtEntireavg   =", ExtEntireavg)
+		fmt.Println("MultAavg       =", MultAavg)
+		fmt.Println("ExtKeyGenavg   =", ExtEntireavg-ExtCtavg-ExtGenavg)
 	}
 }
 
 func Test_MKHE_BFV(t *testing.T) {
-	defaultParams := []ParametersLiteral{PN14QP439, PN15QP880}
-	for _, defaultParam := range defaultParams {
-		fmt.Print("========Paramset=========", "\n")
-		for _, num := range []int{1, 3, 7, 15, 31} {
-			*maxGroups = num
-			// number of parties in each group
-			numParties := 1 // when this is 1, MKHE.
-			JoiningParties := 1
+	for partyi := 0; partyi < len(PartySet); partyi++ {
+		P := PartySet[partyi]
+		fmt.Printf("P = %d\n", P)
 
-			fmt.Print("================= MKHE_BFV ", *maxGroups+1, "===================", "\n", "\n", "\n")
-			KGstart := time.Now()
-			params := NewParametersFromLiteral(defaultParam)
+		var Switch [iternum]time.Duration
+		var MultB [iternum]time.Duration
+		var ExtGen [iternum]time.Duration
+		var ExtCt [iternum]time.Duration
+		var ExtEntire [iternum]time.Duration
+		var MultA [iternum]time.Duration
 
-			groupList := make([]string, *maxGroups)
-			idset := mkrlwe.NewIDSet()
+		for iter := 0; iter < iternum; iter++ {
 
-			for i := range groupList {
-				groupList[i] = "group" + strconv.Itoa(i)
-				idset.Add(groupList[i])
+			// Time params
+			var Switchtemp time.Duration
+			var MultBtemp time.Duration
+			var ExtGentemp time.Duration
+			var ExtCttemp time.Duration
+			var ExtEntiretemp time.Duration
+			var MultAtemp time.Duration
+			defaultParams := []ParametersLiteral{PN15QP880} // PN14QP439, PN15QP880
+			for _, defaultParam := range defaultParams {
+				fmt.Print("========Paramset=========", "\n")
+				for _, num := range []int{P} { // 1, 3, 7, 15, 31
+					*maxGroups = num
+					// number of parties in each group
+					numParties := 1 // when this is 1, MKHE.
+					JoiningParties := 1
+					numCtxt := 1
+
+					fmt.Print("================= MKHE_BFV ", *maxGroups+1, "===================", "\n", "\n", "\n")
+					KGstart := time.Now()
+					params := NewParametersFromLiteral(defaultParam)
+
+					groupList := make([]string, *maxGroups)
+					idset := mkrlwe.NewIDSet()
+
+					for i := range groupList {
+						groupList[i] = "group" + strconv.Itoa(i)
+						idset.Add(groupList[i])
+					}
+
+					var testContext2 *testParams
+
+					// Common
+					sk := make([]*mkrlwe.SecretKey, numParties)
+					pk := make([]*mkrlwe.PublicKey, numParties)
+					rlk := make([]*RelinearizationKey, numParties)
+					cjk := make([]*mkrlwe.ConjugationKey, numParties)
+					rtks := make([]map[uint]*mkrlwe.RotationKey, numParties)
+
+					var gsk *mkrlwe.SecretKey
+					var gpk *mkrlwe.PublicKey
+					var grlk *RelinearizationKey
+					var gcjk *mkrlwe.ConjugationKey
+					var grtk *mkrlwe.RotationKey
+
+					/////////////////////////////////////////////////////////////////////////////////////////////////////
+
+					swk2 := make([]*mkrlwe.SWK, numParties+JoiningParties)
+					swkhead2 := make([]*mkrlwe.SWK, numParties+JoiningParties)
+					var gsk2 *mkrlwe.SecretKey
+					var gpk2 *mkrlwe.PublicKey
+					var grlk2 *RelinearizationKey
+					var gcjk2 *mkrlwe.ConjugationKey
+					var grtk2 *mkrlwe.RotationKey
+
+					ctxtList := make([]*Ciphertext, numCtxt)
+
+					testContext2, _, gsk, gpk, grlk, gcjk, grtk, sk, pk, rlk, cjk, rtks = genTestParams(params, gsk, gpk, grlk, gcjk, grtk, sk, pk, rlk, cjk, rtks, idset, numParties)
+					KGend := time.Since(KGstart)
+					fmt.Print("Key Generation time = ", KGend, "\n")
+
+					// fmt.Print("skup = ", sk[0].Value.Q.Coeffs[2][3], "\n")
+					/////////////////////////////////////////////////////////////////////////////////////////////////////
+					swk := make([]*mkrlwe.SWK, numParties+JoiningParties)
+					swkhead := make([]*mkrlwe.SWK, numParties+JoiningParties)
+
+					var ctxtVP *Ciphertext
+					ctxtVP, Switchtemp, MultBtemp = VectorProd_Before_Join(testContext2, groupList, numParties, sk, swk, swkhead, 1, t)
+
+					ctxtList[0] = ctxtVP
+
+					// MKHE
+					Updatestart := time.Now()
+					testContext2, idset, _, sk, pk, rlk, cjk, rtks = testJoinPartyMK(testContext2, sk, pk, rlk, cjk, rtks, idset, groupList, numParties, JoiningParties, t)
+					groupListup := make([]string, *maxGroups+1)
+					for i := range groupListup {
+						groupListup[i] = "group" + strconv.Itoa(i)
+						// idset.Add(groupList[i])
+					}
+					groupList = groupListup
+					ExtEntiretemp = time.Since(Updatestart)
+					fmt.Print("Extend (key) Generation time = ", ExtEntiretemp, "\n")
+
+					MultAtemp = VectorProd_After_Join(testContext2, groupList, numParties, JoiningParties, ctxtList[0], 1, t)
+
+					_, _, _, _, _, _, _ = gsk2, gpk2, grlk2, gcjk2, grtk2, swk2, swkhead2
+
+					// fmt.Print("skup = ", skup, "\n")
+					// fmt.Print("groupList = ", groupList, "\n")
+
+					// Eval tests
+					// testEvaluatorAdd(testContext2, groupList, t)
+					// testEvaluatorMul(testContext2, groupList, t)
+					// testEvaluatorRot(testContext2, groupList, t)
+					// testEvaluatorConj(testContext2, groupList, t)
+
+				}
 			}
+			Switch[iter] = Switchtemp
+			MultB[iter] = MultBtemp
+			ExtGen[iter] = ExtGentemp
+			ExtCt[iter] = ExtCttemp
+			ExtEntire[iter] = ExtEntiretemp
+			MultA[iter] = MultAtemp
 
-			var testContext2 *testParams
+		}
+		fmt.Print("Switch = ", Switch, "\n")
 
-			// Common
-			sk := make([]*mkrlwe.SecretKey, numParties)
-			pk := make([]*mkrlwe.PublicKey, numParties)
-			rlk := make([]*RelinearizationKey, numParties)
-			cjk := make([]*mkrlwe.ConjugationKey, numParties)
-			rtks := make([]map[uint]*mkrlwe.RotationKey, numParties)
+		var Switchavg time.Duration
+		var MultBavg time.Duration
+		var ExtGenavg time.Duration
+		var ExtCtavg time.Duration
+		var ExtEntireavg time.Duration
+		var MultAavg time.Duration
 
-			var gsk *mkrlwe.SecretKey
-			var gpk *mkrlwe.PublicKey
-			var grlk *RelinearizationKey
-			var gcjk *mkrlwe.ConjugationKey
-			var grtk *mkrlwe.RotationKey
+		Switchavg = Switch[0]
+		MultBavg = MultB[0]
+		ExtGenavg = ExtGen[0]
+		ExtCtavg = ExtCt[0]
+		ExtEntireavg = ExtEntire[0]
+		MultAavg = MultA[0]
 
-			/////////////////////////////////////////////////////////////////////////////////////////////////////
+		for iter := 1; iter < iternum; iter++ {
+			Switchavg += Switch[iter]
+			MultBavg += MultB[iter]
+			ExtGenavg += ExtGen[iter]
+			ExtCtavg += ExtCt[iter]
+			ExtEntireavg += ExtEntire[iter]
+			MultAavg += MultA[iter]
+		}
 
-			swk2 := make([]*mkrlwe.SWK, numParties+JoiningParties)
-			swkhead2 := make([]*mkrlwe.SWK, numParties+JoiningParties)
-			var gsk2 *mkrlwe.SecretKey
-			var gpk2 *mkrlwe.PublicKey
-			var grlk2 *RelinearizationKey
-			var gcjk2 *mkrlwe.ConjugationKey
-			var grtk2 *mkrlwe.RotationKey
+		Switchavg = Switchavg / iternum
+		MultBavg = MultBavg / iternum
+		ExtGenavg = ExtGenavg / iternum
+		ExtCtavg = ExtCtavg / iternum
+		ExtEntireavg = ExtEntireavg / iternum
+		MultAavg = MultAavg / iternum
 
-			testContext2, _, gsk, gpk, grlk, gcjk, grtk, sk, pk, rlk, cjk, rtks = genTestParams(params, gsk, gpk, grlk, gcjk, grtk, sk, pk, rlk, cjk, rtks, idset, numParties)
-			KGend := time.Since(KGstart)
-			fmt.Print("Key Generation time = ", KGend, "\n")
+		fmt.Println("Switchavg      =", Switchavg)
+		fmt.Println("MultBavg       =", MultBavg)
+		fmt.Println("ExtGenavg      =", ExtGenavg)
+		fmt.Println("ExtCtavg       =", ExtCtavg)
+		fmt.Println("ExtEntireavg   =", ExtEntireavg)
+		fmt.Println("MultAavg       =", MultAavg)
+		fmt.Println("ExtKeyGenavg   =", ExtEntireavg-ExtCtavg-ExtGenavg)
+	}
+}
 
-			// fmt.Print("skup = ", sk[0].Value.Q.Coeffs[2][3], "\n")
-			/////////////////////////////////////////////////////////////////////////////////////////////////////
-			// MKHE
-			Updatestart := time.Now()
-			testContext2, idset, _, sk, pk, rlk, cjk, rtks = testJoinPartyMK(testContext2, sk, pk, rlk, cjk, rtks, idset, groupList, numParties, JoiningParties, t)
-			groupListup := make([]string, *maxGroups+1)
-			for i := range groupListup {
-				groupListup[i] = "group" + strconv.Itoa(i)
-				// idset.Add(groupList[i])
+func InputSelection(testContext *testParams, userList []string, numParties int, t *testing.T) {
+
+	numParties = numParties + 1
+
+	fmt.Print("Input Selection numParties = ", numParties, "\n")
+
+	msgList := make([]*Message, numParties)
+	maskList := make([]*Message, numParties)
+	ctList := make([]*Ciphertext, numParties)
+	maskctxt := make([]*Ciphertext, numParties)
+
+	rtkSet := testContext.rtkSet
+	rlkSet := testContext.rlkSet
+	eval := testContext.evaluator
+
+	// Generate data
+	for i := 0; i < numParties; i++ {
+		msgList[i], ctList[i] = newTestVectors(testContext, "group0", (int64)(i+1), (int64)(i+2))
+	}
+
+	// Generate ct_r
+	var r int64
+	r = 2
+	params := testContext.params
+	msg := NewMessage(params)
+	for i := 0; i < params.N(); i++ {
+		msg.Value[i] = int64(0)
+	}
+	msg.Value[r] = int64(1)
+
+	var ctxt_r *Ciphertext
+	// var ctxt_r2 *Ciphertext
+	ctxt_r = testContext.encryptor.EncryptMsgNew(msg, testContext.pkSet.GetPublicKey("group0"))
+	// ctxt_r2 = ctxt_r
+
+	// Generate masks
+	for k := 0; k < numParties; k++ {
+		mask := NewMessage(params)
+		for i := 0; i < params.N(); i++ {
+			mask.Value[i] = int64(0)
+		}
+		mask.Value[k] = int64(1)
+		maskList[k] = mask
+	}
+
+	// for k := 0; k < numParties; k++ {
+	// 	// maskRes := testContext.decryptor.Decrypt(maskctxt[k], testContext.skSet)
+	// 	fmt.Print("MASK TEST = ", maskList[k].Value[0:10], "\n")
+	// }
+
+	ptxt := make([]*bfv.PlaintextMul, numParties)
+	base := (*bfv.PlaintextMul)(testContext.decryptor.ptxtPool)
+
+	for k := 0; k < numParties; k++ {
+		ptxt[k] = &bfv.PlaintextMul{
+			Plaintext: &rlwe.Plaintext{
+				Value: base.Value.CopyNew(),
+			},
+		}
+		testContext.decryptor.encoder.EncodeIntMul(maskList[k].Value, ptxt[k])
+	}
+
+	///////////////////////////// Input Selection ///////////////////////////////////
+	var ctxtout *Ciphertext
+	ctout := NewCiphertext(params, ctxt_r.IDSet())
+
+	eval.mulPlaintextMul(ctxt_r, ptxt[0], ctout)
+
+	for k := 0; k < numParties; k++ {
+		fmt.Print("k = ", k, "\n")
+
+		// Mult with mask
+		eval.mulPlaintextMul(ctxt_r, ptxt[k], ctout)
+
+		var masktemp *Ciphertext
+		var maskrottemp *Ciphertext
+		// Rot & Sum
+		// fmt.Print("rtkSet.Value = ", rtkSet.Value["group0"], "\n")
+		// rk := rtkSet.GetRotationKey("group0", uint(2))
+		// _ = rk
+
+		for j := 0; j < int(math.Log2(float64(params.N()))); j++ {
+			if j == 0 {
+				masktemp = ctout
+			} else {
+				maskrottemp = eval.RotateNew(masktemp, 1<<(j-1), rtkSet)
+				masktemp = eval.AddNew(masktemp, maskrottemp)
 			}
-			groupList = groupListup
-			Updateend := time.Since(Updatestart)
-			fmt.Print("Extend (key) Generation time = ", Updateend, "\n")
+		}
+		maskctxt[k] = masktemp
 
-			_, _, _, _, _, _, _ = gsk2, gpk2, grlk2, gcjk2, grtk2, swk2, swkhead2
+		maskRes := testContext.decryptor.Decrypt(maskctxt[k], testContext.skSet)
+		fmt.Print("ctxt_output = ", maskRes.Value[0:10], "\n")
 
-			// fmt.Print("skup = ", skup, "\n")
-			// fmt.Print("groupList = ", groupList, "\n")
+		// Mul with data
+		masktemp = eval.MulRelinNew(ctList[k], maskctxt[k], rlkSet)
 
-			// Eval tests
-			testEvaluatorAdd(testContext2, groupList, t)
-			testEvaluatorMul(testContext2, groupList, t)
-			testEvaluatorRot(testContext2, groupList, t)
-			testEvaluatorConj(testContext2, groupList, t)
+		if k == 0 {
+			ctxtout = masktemp
+		} else {
+			ctxtout = eval.AddNew(ctxtout, masktemp)
+		}
+
+		msgRes1 := testContext.decryptor.Decrypt(ctxtout, testContext.skSet)
+		fmt.Print("ctxt_output = ", msgRes1.Value[:10], "\n")
+	}
+
+}
+
+func VectorProd_Before_Join(testContext *testParams, userList []string, numParties int, sk []*mkrlwe.SecretKey, swk []*mkrlwe.SWK, swkhead []*mkrlwe.SWK, flag int, t *testing.T) (ctxtout *Ciphertext, Switchtemp time.Duration, MultBtemp time.Duration) {
+
+	// numParties = numParties
+
+	msgList := make([]*Message, numParties+len(userList)-1)
+	ctList := make([]*Ciphertext, numParties+len(userList)-1)
+
+	rlkSet := testContext.rlkSet
+	eval := testContext.evaluator
+
+	// fmt.Print("numParties = ", numParties, "\n")
+	// Generate data
+	// for i := 0; i < numParties; i++ {
+	// 	msgList[i], ctList[i] = newTestVectors(testContext, "group0", (int64)(i+1), (int64)(i+2))
+	// }
+
+	for j := range userList {
+		for i := 0; i < numParties; i++ {
+			// fmt.Print("i, j = ", i, j, "\n")
+			msgList[i+j], ctList[i+j] = newTestVectors(testContext, userList[j], (int64)(i+j+1), (int64)(i+j+2))
+			// fmt.Print("generated msg = ", msgList[i+j].Value[:10], "\n")
 		}
 	}
+
+	if flag == 0 {
+		for j := range userList {
+			for i := 0; i < numParties; i++ {
+				// fmt.Print("i, j = ", i, j, "\n")
+				ctcache := testContext.encryptor.EncryptSkMsgNew(msgList[i+j], sk[i+j])
+				ctList[i+j] = ctcache.CopyNew()
+			}
+		}
+
+		Switchtime_start := time.Now()
+		for j := 0; j < len(userList)-1+numParties; j++ {
+			// fmt.Print("j = ", j, "\n")
+			var ctxtKS *Ciphertext
+			ctxtKS = ctList[j].CopyNew()
+			eval.ksw.KS(ctList[j].Ciphertext, swk[j], swkhead[j], ctxtKS.Ciphertext)
+			ctList[j] = ctxtKS
+		}
+		Switchtemp = time.Since(Switchtime_start)
+		fmt.Print("Switch = ", Switchtemp, "\n")
+	}
+
+	// fmt.Println("ctxt Poly pointer:", ctxt.Ciphertext.Value["group0"].Coeffs[0])
+
+	// msg3Out := testContext.decryptor.Decrypt(ctxt, testContext.skSet)
+	// fmt.Print("Dec TEST !! = ", msg3Out.Value[0], "\n")
+	// fmt.Print("!! ctxt = ", ctxt.Ciphertext.Value["group0"].Coeffs[0][:10], "\n")
+
+	// var ctxtout *Ciphertext
+	// var ctxttemp *Ciphertext
+	// ctout := NewCiphertext(params, ctxt_r.IDSet())
+
+	ctxtout = ctList[0].CopyNew()
+	ctMulstart := time.Now()
+
+	ctxts := make([]*Ciphertext, len(ctList))
+	for i := 0; i < len(ctList); i++ {
+		ctxts[i] = ctList[i].CopyNew()
+	}
+
+	// binary tree reduction
+	for len(ctxts) > 1 {
+		var next []*Ciphertext
+
+		for i := 0; i < len(ctxts); i += 2 {
+			if i+1 < len(ctxts) {
+				prod := eval.MulRelinNew(ctxts[i], ctxts[i+1], rlkSet)
+				next = append(next, prod)
+			} else {
+				next = append(next, ctxts[i])
+			}
+		}
+
+		ctxts = next
+	}
+	ctxtout = ctxts[0]
+	// fmt.Print("j max, k max = ", len(userList)-1, ", ", numParties-1, "\n")
+
+	// for j := 0; j < len(userList)-1+numParties-1; j++ {
+	// 	// for k := 0; k < ; k++ {
+	// 	// fmt.Print("k, j = ", j, "\n")
+
+	// 	ctxtout = eval.MulRelinNew(ctxtout, ctList[j+1], rlkSet)
+
+	// 	// msgRes1 := testContext.decryptor.Decrypt(ctxtout, testContext.skSet)
+	// 	// fmt.Print("ctxt_output = ", msgRes1.Value[:10], "\n")
+	// 	// }
+	// }
+
+	MultBtemp = time.Since(ctMulstart)
+	fmt.Print("Mult Before Join = ", MultBtemp, "\n")
+
+	return ctxtout, Switchtemp, MultBtemp
+}
+
+func VectorProd_After_Join(testContext *testParams, userList []string, numParties int, JoiningParties int, ctxtin *Ciphertext, flag int, t *testing.T) (MultAtemp time.Duration) {
+
+	// numParties = numParties + 1
+
+	// fmt.Print("Vector Prod numParties = ", numParties, "\n")
+
+	// fmt.Print("userList =", userList, "\n")
+	msgList := make([]*Message, JoiningParties)
+	ctList := make([]*Ciphertext, JoiningParties)
+
+	rlkSet := testContext.rlkSet
+	eval := testContext.evaluator
+
+	// Generate data
+	// for i := 0; i < JoiningParties; i++ {
+	// 	msgList[i], ctList[i] = newTestVectors(testContext, "group0", (int64)(i+numParties+1), (int64)(i+numParties+2))
+	// }
+
+	if flag == 0 {
+		for i := 0; i < JoiningParties; i++ {
+			msgList[i], ctList[i] = newTestVectors(testContext, "group0", (int64)(i+numParties+1), (int64)(i+numParties+2))
+		}
+	} else {
+		for i := 0; i < JoiningParties; i++ {
+			// fmt.Print("group index = ", len(userList)+i, "\n")
+			msgList[i], ctList[i] = newTestVectors(testContext, "group"+strconv.Itoa(len(userList)+i-1), (int64)(i+len(userList)), (int64)(i+len(userList)+1))
+		}
+	}
+	// fmt.Print("generated msg = ", msgList[0].Value[:10], "\n")
+	// fmt.Print("joining ctxt ID = ", ctList[0].IDSet(), "\n")
+
+	var ctxtout *Ciphertext
+	// var ctxttemp *Ciphertext
+	// ctout := NewCiphertext(params, ctxt_r.IDSet())
+
+	ctxtout = ctxtin
+
+	ctMulstart := time.Now()
+
+	for k := 0; k < JoiningParties; k++ {
+		// fmt.Print("k = ", k, "\n")
+
+		ctxtout = eval.MulRelinNew(ctxtout, ctList[k], rlkSet)
+
+		// msgRes2 := testContext.decryptor.Decrypt(ctList[k], testContext.skSet)
+		// fmt.Print("VP generated ctxt = ", msgRes2.Value[:10], "\n")
+
+		// msgRes1 := testContext.decryptor.Decrypt(ctxtout, testContext.skSet)
+		// fmt.Print("VP ctxt_output = ", msgRes1.Value[:10], "\n")
+
+	}
+
+	MultAtemp = time.Since(ctMulstart)
+	fmt.Print("Mult After Join = ", MultAtemp, "\n")
+
+	return MultAtemp
 }
 
 // Returns the ceil(log2) of the sum of the absolute value of all the coefficients
@@ -456,14 +912,15 @@ func testKS(testContext *testParams, userList []string, gsk *mkrlwe.SecretKey, g
 	msgListsk := make([]*Message, numUsers)
 	ctListsk := make([]*Ciphertext, numUsers)
 
-	// fmt.Print(params.T(), "\n") // 65537
+	fmt.Print("userList = ", userList, "\n")
+	fmt.Print("numUsers = ", numUsers, "\n")
 
 	for i := range userList {
 		// msgListpk[i], ctListpk[i] = newTestVectors(testContext, userList[i], int64(99), int64(100))
 		msgListsk[i], ctListsk[i] = newTestVectors(testContext, userList[i], int64(99), int64(100))
 	}
 
-	ctOut := ctListsk[0]
+	ctOut := ctListsk[0].CopyNew()
 	msg = msgListsk[0]
 	msg3Out := msgListsk[0]
 	// fmt.Print("Original MSG SK = ", msg.Value[0], "\n")
@@ -487,6 +944,7 @@ func testKS(testContext *testParams, userList []string, gsk *mkrlwe.SecretKey, g
 	// fmt.Print("skEnc TEST = ", msg2Out.Value[0], "\n")
 	_ = msg2Out
 	eval.ksw.KS(ctsk.Ciphertext, swk[0], swkhead[0], ctOut.Ciphertext)
+	// ctOut = ctsk
 	// msg3Out = testContext.decryptor.DecryptSk(ctOut, gsk)
 
 	// Partial Decrypt
@@ -522,7 +980,7 @@ func testKS(testContext *testParams, userList []string, gsk *mkrlwe.SecretKey, g
 	ctsk = ctskorigin
 
 	msg2Out = testContext.decryptor.DecryptSk(ctOut, gsk)
-	// fmt.Print("Dec TEST = ", msg2Out.Value[0], "\n")
+	fmt.Print("Dec TEST = ", msg2Out.Value[0], "\n")
 	_ = msg2Out
 	return msg, ctOut, ctsk
 }
@@ -534,7 +992,7 @@ func testKSAfterJoin(testContext *testParams, userList []string, msg *Message, c
 	// numUsers := len(sk)
 
 	msg2Out := testContext.decryptor.DecryptSk(ctxt, gsk)
-	// fmt.Print("Dec TEST = ", msg2Out.Value[0], "\n")
+	fmt.Print("Dec TEST2 = ", msg2Out.Value[0], "\n")
 	_ = msg2Out
 
 	// If generate jk
@@ -562,6 +1020,8 @@ func newTestVectors(testContext *testParams, id string, a, b int64) (msg *Messag
 	for i := 0; i < params.N(); i++ {
 		msg.Value[i] = int64(utils.RandUint64()/2)%(b-a) + a
 	}
+
+	// fmt.Print("encryptor = ", testContext.encryptor, "\n")
 
 	if testContext.encryptor != nil {
 		ciphertext = testContext.encryptor.EncryptMsgNew(msg, testContext.pkSet.GetPublicKey(id))
@@ -780,12 +1240,16 @@ func testEvaluatorRot(testContext *testParams, userList []string, t *testing.T) 
 		}
 	}
 
+	msgRes := testContext.decryptor.Decrypt(ct, testContext.skSet)
+	fmt.Print("Rot test = ", msgRes.Value[:10], "\n")
+
 	t.Run(GetTestName(testContext.params, "MKRotate: "+strconv.Itoa(numUsers)+"/ "), func(t *testing.T) {
 		Rotstart := time.Now()
 		ctRes := eval.RotateNew(ct, rot, rtkSet)
 		Rotend := time.Since(Rotstart)
 		fmt.Print("Rot time = ", Rotend, "\n")
 		msgRes := testContext.decryptor.Decrypt(ctRes, testContext.skSet)
+		fmt.Print("Rot test after = ", msgRes.Value[:10], "\n")
 
 		for i := 0; i < slots; i++ {
 			var delta int64
@@ -918,10 +1382,10 @@ func MPgenSWK(testContext *testParams,
 	return testContext2, nil, swkup, swkheadup, swksumup, swkheadsumup
 }
 
-/////////////////////////////////////////////////////// Update Party ///////////////////////////////////////////////////////////
+// ///////////////////////////////////////////////////// Update Party ///////////////////////////////////////////////////////////
 func testJoinPartyMP(testContext *testParams,
 	gsk *mkrlwe.SecretKey, gpk *mkrlwe.PublicKey, grlk *RelinearizationKey, gcjk *mkrlwe.ConjugationKey, grtk *mkrlwe.RotationKey, sk []*mkrlwe.SecretKey, pk []*mkrlwe.PublicKey, rlk []*RelinearizationKey, cjk []*mkrlwe.ConjugationKey, swk []*mkrlwe.SWK, swkhead []*mkrlwe.SWK, swksum *mkrlwe.SWK, swkheadsum *mkrlwe.SWK, rtks []map[uint]*mkrlwe.RotationKey, jk *mkrlwe.SWK, jkhead *mkrlwe.SWK, uaux *mkrlwe.SWK, uauxhead *mkrlwe.SWK,
-	groupIdSet *mkrlwe.IDSet, numParties int, JoiningParties int, ctxtList []*Ciphertext, t *testing.T) (testContext2 *testParams, err error, gskup *mkrlwe.SecretKey, gpkup *mkrlwe.PublicKey, grlkup *RelinearizationKey, gcjkup *mkrlwe.ConjugationKey, grtkup *mkrlwe.RotationKey, skup []*mkrlwe.SecretKey, pkup []*mkrlwe.PublicKey, rlkup []*RelinearizationKey, cjkup []*mkrlwe.ConjugationKey, swkup []*mkrlwe.SWK, swkheadup []*mkrlwe.SWK, swksumup *mkrlwe.SWK, swkheadsumup *mkrlwe.SWK, rtksup []map[uint]*mkrlwe.RotationKey, jkup *mkrlwe.SWK, jkheadup *mkrlwe.SWK, uauxup *mkrlwe.SWK, uauxheadup *mkrlwe.SWK, ctxtListup []*Ciphertext) {
+	groupIdSet *mkrlwe.IDSet, numParties int, JoiningParties int, ctxtList []*Ciphertext, t *testing.T) (testContext2 *testParams, err error, gskup *mkrlwe.SecretKey, gpkup *mkrlwe.PublicKey, grlkup *RelinearizationKey, gcjkup *mkrlwe.ConjugationKey, grtkup *mkrlwe.RotationKey, skup []*mkrlwe.SecretKey, pkup []*mkrlwe.PublicKey, rlkup []*RelinearizationKey, cjkup []*mkrlwe.ConjugationKey, swkup []*mkrlwe.SWK, swkheadup []*mkrlwe.SWK, swksumup *mkrlwe.SWK, swkheadsumup *mkrlwe.SWK, rtksup []map[uint]*mkrlwe.RotationKey, jkup *mkrlwe.SWK, jkheadup *mkrlwe.SWK, uauxup *mkrlwe.SWK, uauxheadup *mkrlwe.SWK, ctxtListup []*Ciphertext, ExtGentemp time.Duration, ExtCttemp time.Duration) {
 
 	testContext2 = testContext
 
@@ -931,11 +1395,15 @@ func testJoinPartyMP(testContext *testParams,
 	beta := params.Beta(levelQ)
 	ringQP := params.RingQP()
 
-	testContext2.skSet = mkrlwe.NewSecretKeySet()
-	testContext2.pkSet = mkrlwe.NewPublicKeyKeySet()
-	testContext2.rlkSet = NewRelinearizationKeySet(testContext.params)
-	testContext2.rtkSet = mkrlwe.NewRotationKeySet()
-	testContext2.cjkSet = mkrlwe.NewConjugationKeySet()
+	// fmt.Print("testContext input = ", testContext.rtkSet.Value["group0"], "\n")
+
+	// testContext2.skSet = mkrlwe.NewSecretKeySet()
+	// testContext2.pkSet = mkrlwe.NewPublicKeyKeySet()
+	// testContext2.rlkSet = NewRelinearizationKeySet(testContext.params)
+	// testContext2.rtkSet = mkrlwe.NewRotationKeySet()
+	// testContext2.cjkSet = mkrlwe.NewConjugationKeySet()
+
+	// fmt.Print("testContext input = ", testContext.rtkSet.Value["group0"], "\n")
 
 	skup = make([]*mkrlwe.SecretKey, numParties+JoiningParties)
 	pkup = make([]*mkrlwe.PublicKey, numParties+JoiningParties)
@@ -960,8 +1428,8 @@ func testJoinPartyMP(testContext *testParams,
 		rtkstemp[p] = testContext2.kgen.GenDefaultRotationKeys(sktemp[p])
 	}
 
-	Update_KG_end := time.Since(Update_KG_start)
-	fmt.Print("Extend (key) Generation time = ", Update_KG_end, "\n")
+	ExtGentemp = time.Since(Update_KG_start)
+	fmt.Print("Extend (key) Generation time = ", ExtGentemp, "\n")
 
 	for p := 0; p < numParties; p++ {
 		skup[p] = sk[p]
@@ -983,10 +1451,23 @@ func testJoinPartyMP(testContext *testParams,
 
 	gsktemp := gsk.CopyNew()
 	params.RingQP().AddLvl(levelQ, levelP, gsk.Value, skup[numParties+JoiningParties-1].Value, gsktemp.Value)
+	// fmt.Print("sk key update = ", skup, "\n")
 	testContext2.skSet.AddSecretKey(gsktemp)
 
 	params.RingQP().AddLvl(levelQ, levelP, gpk.Value[0], pkup[numParties+JoiningParties-1].Value[0], gpk.Value[0])
+	// fmt.Print("pk key update = ", pkup, "\n")
 	testContext2.pkSet.AddPublicKey(gpk)
+
+	// for idx, _ := range rtksup[0] {
+	// 	rtk := make([]*mkrlwe.RotationKey, numParties+JoiningParties)
+	// 	for p := 0; p < numParties+JoiningParties; p++ {
+	// 		rtk[p] = rtksup[p][idx]
+	// 	}
+	// 	for i := 0; i < beta; i++ {
+	// 		params.RingQP().AddLvl(levelQ, levelP, grtk.Value.Value[i], rtk[numParties+JoiningParties-1].Value.Value[i], grtk.Value.Value[i])
+	// 	}
+	// 	testContext2.rtkSet.AddRotationKey(grtk)
+	// }
 
 	for idx, _ := range rtksup[0] {
 		rtk := make([]*mkrlwe.RotationKey, numParties+JoiningParties)
@@ -994,9 +1475,10 @@ func testJoinPartyMP(testContext *testParams,
 			rtk[p] = rtksup[p][idx]
 		}
 		for i := 0; i < beta; i++ {
-			params.RingQP().AddLvl(levelQ, levelP, grtk.Value.Value[i], rtk[numParties+JoiningParties-1].Value.Value[i], grtk.Value.Value[i])
+			params.RingQP().AddLvl(levelQ, levelP, testContext.rtkSet.Value["group0"][idx].Value.Value[i], rtksup[numParties+JoiningParties-1][idx].Value.Value[i], testContext.rtkSet.Value["group0"][idx].Value.Value[i])
+			_ = idx
 		}
-		testContext.rtkSet.AddRotationKey(grtk)
+		testContext2.rtkSet.AddRotationKey(testContext.rtkSet.Value["group0"][idx])
 	}
 
 	for i := 0; i < beta; i++ {
@@ -1040,15 +1522,15 @@ func testJoinPartyMP(testContext *testParams,
 		jkhead.Value.Value[i].P.Copy(swkheadsum.Value.Value[i].P)
 	}
 
-	// swk_i update
-	swkaux := make([]*mkrlwe.SWK, numParties)
-	swkauxhead := make([]*mkrlwe.SWK, numParties)
-	for p := 0; p < numParties; p++ {
-		swkaux[p], swkauxhead[p] = testContext.kgen.UAuxKeyGen(swkhead[p], skup[numParties+JoiningParties-1])
-		for i := 0; i < beta; i++ {
-			ringQP.AddLvl(levelQ, levelP, swk[p].Value.Value[i], swkaux[p].Value.Value[i], swk[p].Value.Value[i])
-		}
-	}
+	// // swk_i update
+	// swkaux := make([]*mkrlwe.SWK, numParties)
+	// swkauxhead := make([]*mkrlwe.SWK, numParties)
+	// for p := 0; p < numParties; p++ {
+	// 	swkaux[p], swkauxhead[p] = testContext.kgen.UAuxKeyGen(swkhead[p], skup[numParties+JoiningParties-1])
+	// 	for i := 0; i < beta; i++ {
+	// 		ringQP.AddLvl(levelQ, levelP, swk[p].Value.Value[i], swkaux[p].Value.Value[i], swk[p].Value.Value[i])
+	// 	}
+	// }
 
 	// Update swksum
 	for p := numParties; p < numParties+JoiningParties; p++ {
@@ -1077,8 +1559,8 @@ func testJoinPartyMP(testContext *testParams,
 	for k := range ctxtList {
 		ctxtListup[k] = testContext2.evaluator.KSNew(ctxtList[k], jk, jkhead)
 	}
-	Update_ctxt_end := time.Since(Update_ctxt_start)
-	fmt.Print("Extend (ctxt) time = ", Update_ctxt_end, "\n")
+	ExtCttemp = time.Since(Update_ctxt_start)
+	fmt.Print("Extend (ctxt) time = ", ExtCttemp, "\n")
 
 	swkup = swk
 	swkheadup = swkhead
@@ -1095,7 +1577,7 @@ func testJoinPartyMP(testContext *testParams,
 	uauxheadup = uauxhead
 
 	if testContext2.prng, err = utils.NewPRNG(); err != nil {
-		return nil, err, gskup, gpkup, grlkup, gcjkup, grtkup, skup, pkup, rlkup, cjkup, swkup, swkheadup, swksumup, swkheadsumup, rtksup, jkup, jkheadup, uauxup, uauxheadup, ctxtListup
+		return nil, err, gskup, gpkup, grlkup, gcjkup, grtkup, skup, pkup, rlkup, cjkup, swkup, swkheadup, swksumup, swkheadsumup, rtksup, jkup, jkheadup, uauxup, uauxheadup, ctxtListup, ExtGentemp, ExtCttemp
 	}
 
 	testContext2.encryptor = testContext.encryptor
@@ -1105,7 +1587,7 @@ func testJoinPartyMP(testContext *testParams,
 	testContext2.ringQ = testContext.ringQ
 	testContext2.ringQMul = testContext.ringQMul
 
-	return testContext2, nil, gskup, gpkup, grlkup, gcjkup, grtkup, skup, pkup, rlkup, cjkup, swkup, swkheadup, swksumup, swkheadsumup, rtksup, jkup, jkheadup, uauxup, uauxheadup, ctxtListup
+	return testContext2, nil, gskup, gpkup, grlkup, gcjkup, grtkup, skup, pkup, rlkup, cjkup, swkup, swkheadup, swksumup, swkheadsumup, rtksup, jkup, jkheadup, uauxup, uauxheadup, ctxtListup, ExtGentemp, ExtCttemp
 }
 
 func testJoinPartyMK(testContext *testParams,

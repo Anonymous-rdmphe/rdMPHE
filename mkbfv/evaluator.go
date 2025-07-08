@@ -3,6 +3,8 @@ package mkbfv
 import (
 	"mk-lattigo/mkrlwe"
 
+	"github.com/ldsec/lattigo/v2/bfv"
+
 	"github.com/ldsec/lattigo/v2/ring"
 )
 
@@ -175,6 +177,48 @@ func (eval *Evaluator) mulRelinHoisted(ct0, ct1 *Ciphertext, rlkSet *Relineariza
 		rlkSet.HoistPool1[0], rlkSet.HoistPool2[0],
 		rlkSet.HoistPool1[1], rlkSet.HoistPool2[1],
 		rlkSet, ctOut.Ciphertext)
+}
+
+// The procedure will panic if either op0.Degree or op1.Degree > 1.
+func (eval *Evaluator) MulPtxtNew(ct *Ciphertext, pt *bfv.Plaintext) (ctOut *Ciphertext) {
+
+	ptNTT := pt
+	ctOut = NewCiphertext(eval.params, ct.IDSet())
+	ctOutR := NewCiphertext(eval.params, ct.IDSet())
+
+	// ctR := new(mkrlwe.Ciphertext)
+	ctOutR.Value = make(map[string]*ring.Poly)
+
+	eval.conv.ModUpQtoR(ct.Value["0"], ctOutR.Value["0"])
+
+	eval.params.RingR().NTTLvl(ct.Level(), ct.Value["0"], ctOutR.Value["0"])
+
+	eval.params.RingR().NTTLvl(ct.Level(), pt.Value, ptNTT.Value)
+	// eval.params.RingQ().InvMFormLvl(ct.Level(), ptNTT.Value, ptNTT.Value)
+	eval.params.RingR().MFormLvl(ct.Level(), ptNTT.Value, ptNTT.Value)
+
+	eval.params.RingR().MulCoeffsMontgomeryLvl(ct.Level(), ctOutR.Value["0"], ptNTT.Value, ctOutR.Value["0"])
+
+	for id := range ct.Value {
+		eval.conv.ModUpQtoR(ct.Value[id], ctOutR.Value[id])
+		eval.params.RingQ().NTTLvl(ct.Level(), ctOutR.Value[id], ctOutR.Value[id])
+		eval.params.RingQ().MulCoeffsMontgomeryLvl(ctOutR.Level(), ctOutR.Value[id], ptNTT.Value, ctOutR.Value[id])
+		eval.params.RingQ().InvNTTLvl(ct.Level(), ctOutR.Value[id], ctOutR.Value[id])
+
+	}
+
+	// }
+	return
+}
+
+func (eval *Evaluator) mulPlaintextMul(ct0 *Ciphertext, ptRt *bfv.PlaintextMul, ctOut *Ciphertext) {
+	for i := range ct0.Value {
+		ringQ := eval.params.RingQ()
+
+		ringQ.NTT(ct0.Value[i], ctOut.Value[i])
+		ringQ.MulCoeffsMontgomeryConstant(ctOut.Value[i], ptRt.Value, ctOut.Value[i])
+		ringQ.InvNTT(ctOut.Value[i], ctOut.Value[i])
+	}
 }
 
 // RotateNew rotates the columns of ct0 by k positions to the left, and returns the result in a newly created element.
